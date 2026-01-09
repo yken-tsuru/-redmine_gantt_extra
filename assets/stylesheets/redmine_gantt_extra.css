@@ -1,0 +1,31 @@
+/* Redmine Gantt Extra CSS */
+.gantt_hdr {
+    /* Header styling improvements could go here */
+    border-color: #ddd;
+}
+
+/* Example: Hover effect for tasks to indicate interactivity */
+.gantt_task_strip {
+    cursor: pointer;
+}
+
+/* Task bar enhancements */
+.task_todo,
+.task_late,
+.task_done {
+    border-radius: 4px;
+    box-shadow: 1px 1px 3px rgba(0, 0, 0, 0.2);
+    transition: opacity 0.2s;
+}
+
+.task_todo:hover,
+.task_late:hover,
+.task_done:hover {
+    opacity: 0.8;
+    cursor: move;
+    /* Indicate draggable */
+}
+
+/* Parent/Group lines - typically handled by .task_group or similar if present, 
+   but specific selectors might depend on Redmine version. 
+   We'll add a generic improved look for markers. */
