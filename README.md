@@ -4,8 +4,11 @@ A Redmine plugin that enhances the standard Gantt chart with improved usability 
 
 ## Features
 
-### 1. Drag & Drop Rescheduling
-Allows users to modify the start and due dates of issues directly on the Gantt chart by dragging and dropping the task bars.
+### 1. Drag & Drop Scheduling
+- **Reschedule Tasks**: Drag and drop the task bar on the timeline to change start and due dates.
+- **Resize Tasks**: Drag the left or right edges of the task bar to change the start date or due date independently.
+- **Parent Reassignment**: Drag and drop the issue subject (left side) onto another issue to change its parent.
+- **Quick Edit**: Click on a task bar to open a popup editor for Start Date, Due Date, Progress, and Assignee.
 - Drag tasks horizontally to shift dates.
 - Updates are saved via AJAX.
 - Respects user permissions (issues are only draggable if the user has permission to edit them).

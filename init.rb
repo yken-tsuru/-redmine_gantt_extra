@@ -32,7 +32,7 @@ Redmine::Plugin.register :redmine_gantt_extra do
   name 'Redmine Gantt Extra plugin'
   author 'yken tsuru'
   description 'Plugin to improve Gantt chart usability and display'
-  version '0.1.0'
+  version '0.2.0'
   url 'https://github.com/yken-tsuru/-redmine_gantt_extra'
   author_url 'https://github.com/yken-tsuru'
 end

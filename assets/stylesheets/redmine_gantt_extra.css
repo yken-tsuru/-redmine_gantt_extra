@@ -29,3 +29,133 @@
 /* Parent/Group lines - typically handled by .task_group or similar if present, 
    but specific selectors might depend on Redmine version. 
    We'll add a generic improved look for markers. */
+
+/* Drag and Drop Parent Reassignment */
+.issue-subject {
+    cursor: grab;
+    /* Indicate draggable */
+    user-select: none;
+}
+
+.issue-subject.is-dragging {
+    cursor: grabbing;
+    background-color: #f0f0f0;
+    border: 1px dashed #ccc;
+    box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.2);
+    /* Ensure the helper doesn't block mouse events from reaching the droppable */
+    pointer-events: none;
+}
+
+.issue-subject.subject-hover {
+    background-color: #e6f7ff !important;
+    border: 2px solid #1890ff !important;
+    font-weight: bold;
+}
+
+/* Resizing handles */
+/* Visual Grip for Resize Handles */
+.ui-resizable-e,
+.ui-resizable-w {
+    /* Transparent by default, show on hover */
+    background-color: transparent;
+    transition: background-color 0.2s;
+    width: 6px !important;
+    /* Slightly larger hit area */
+}
+
+/* Add a visual indicator (grip) when hovering the task or the handle */
+.issue-subject:hover .ui-resizable-e,
+.ui-resizable-e:hover {
+    background: linear-gradient(to right, transparent 0%, rgba(0, 0, 0, 0.1) 50%, transparent 100%);
+    border-right: 2px solid rgba(0, 0, 0, 0.2);
+}
+
+.issue-subject:hover .ui-resizable-w,
+.ui-resizable-w:hover {
+    background: linear-gradient(to right, transparent 0%, rgba(0, 0, 0, 0.1) 50%, transparent 100%);
+    border-left: 2px solid rgba(0, 0, 0, 0.2);
+}
+
+/* Adjust Cursor if standard resize is too aggressive, trying col-resize or pointer? 
+   Standard 'e-resize' is robust, but let's stick to it unless user insists on custom image.
+   The visual grip usually helps UX more than cursor change. 
+*/
+.ui-resizable-e {
+    cursor: e-resize;
+    right: 0;
+    width: 5px;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    z-index: 100;
+}
+
+/* Tooltip for resizing feedback */
+.gantt-resize-tooltip {
+    position: absolute;
+    background-color: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    z-index: 10000;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+/* Quick Edit Popup */
+.gantt-quick-edit-popup {
+    position: absolute;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+    padding: 10px;
+    z-index: 9999;
+    font-size: 12px;
+    min-width: 250px;
+}
+
+.gantt-quick-edit-popup h3 {
+    margin: 0 0 8px 0;
+    font-size: 13px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 4px;
+}
+
+.gantt-quick-edit-popup .form-row {
+    margin-bottom: 8px;
+    clear: both;
+}
+
+.gantt-quick-edit-popup label {
+    display: inline-block;
+    width: 80px;
+    font-weight: bold;
+}
+
+.gantt-quick-edit-popup input,
+.gantt-quick-edit-popup select {
+    width: 140px;
+    box-sizing: border-box;
+}
+
+.gantt-quick-edit-buttons {
+    text-align: right;
+    margin-top: 10px;
+}
+
+.gantt-quick-edit-buttons button {
+    cursor: pointer;
+    margin-left: 5px;
+}
+
+.ui-resizable-w {
+    cursor: w-resize;
+    left: 0;
+    width: 5px;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    z-index: 100;
+}
