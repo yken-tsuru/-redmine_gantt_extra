@@ -15,3 +15,5 @@ ja:
     error_permission_denied: "アクセス拒否: このチケットを編集する権限がありません。"
     error_validation_failed: "バリデーションエラー: %{errors}"
     loading: "読み込み中..."
+    label_switch_to_date_view: "日付表示に切替"
+    label_switch_to_standard_view: "標準表示に戻す"

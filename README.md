@@ -1,41 +1,53 @@
 # Redmine Gantt Extra
 
-A Redmine plugin that enhances the standard Gantt chart with improved usability and new features.
+A Redmine plugin that enhances the standard Gantt chart with improved usability, new features, and a premium UI.
 
-## Features
+## Key Features
 
-### 1. Drag & Drop Scheduling
-- **Reschedule Tasks**: Drag and drop the task bar on the timeline to change start and due dates.
-- **Resize Tasks**: Drag the left or right edges of the task bar to change the start date or due date independently.
-- **Parent Reassignment**: Drag and drop the issue subject (left side) onto another issue to change its parent.
-- **Quick Edit**: Click on a task bar to open a popup editor for Start Date, Due Date, Progress, and Assignee.
-- Drag tasks horizontally to shift dates.
-- Updates are saved via AJAX.
-- Respects user permissions (issues are only draggable if the user has permission to edit them).
+### 1. Intuitive Scheduling (Drag & Drop / Resize)
+- **Reschedule**: Drag tasks horizontally on the timeline to shift both start and due dates.
+- **Resize**: Drag the edges of task bars to adjust the start or due date independently.
+- **Parent Reassignment**: Drag and drop issue subjects (on the left) to change their parent issues dynamically.
+- **Real-time updates**: All changes are saved instantly via AJAX.
 
-### 2. Tree View Filter
-Provides a "Tree View" mode to focus on a specific task hierarchy.
-- Adds a "Parent Issue ID" filter to the Gantt options.
-- When filtered, displays the specified parent issue and all its descendants (children, grandchildren, etc.).
-- Excludes unrelated issues for a cleaner view.
+### 2. Date Display Mode (Compact Mode)
+- **Toggle View**: A "Switch to Date View" button in the top-right allows you to display numeric dates instead of week numbers.
+- **Sleek Layout**: Slims down the header to maximize the usable chart area.
+- **Persistence**: Your selected view mode is remembered even after page reloads.
+
+### 3. Quick Edit Popover
+- **Instant Editing**: Click any Gantt bar to open a quick-edit popup.
+- **Fields**: Modify Start Date, Due Date, Done Ratio, and Assignee on the fly.
+- **Seamless Experience**: Update issue details without leaving the Gantt page.
+
+### 4. Advanced Tree View Filter
+- **Hierarchy Focus**: Adds a "Parent Issue ID" filter to the Gantt options.
+- **Descendant View**: Displays the selected parent and all its children/descendants, allowing you to focus on specific project branches.
+
+### 5. Premium Design system
+- **Modern UI**: Features glassmorphism (background blurring), subtle shadows, and smooth CSS animations.
+- **Accessibility**: Enhances usability through highlighted weekend backgrounds and visual feedback (icons) for resize handles.
+- **Full I18n Support**: All UI labels and messages are fully localized (English and Japanese included).
 
 ## Installation
 
 1.  Clone this repository into your Redmine `plugins` directory:
     ```bash
     cd /path/to/redmine/plugins
-    git clone https://github.com/your-repo/redmine_gantt_extra.git
+    git clone https://github.com/yken-tsuru/redmine_gantt_extra.git
     ```
-2.  Restart Redmine.
+2.  Restart your Redmine application.
 
-## Usage
+## How to Use
 
-### Drag & Drop
-Simply open the Gantt chart (`/projects/xxx/issues/gantt`). If you have edit permissions, you can drag visible task bars.
+### Toggle Date View
+In the Gantt chart's contextual menu (top-right), click "Switch to Date View" to toggle the compact display mode.
 
-### Tree View
-1.  Navigate to the Gantt chart.
-2.  Locate the "Parent Issue ID" input field in the filter area.
-3.  Enter the ID of the root issue you want to view.
-4.  Click "Apply".
-5.  The Gantt chart will display the tree structure rooted at the specified issue.
+### Quick Edit
+Click on any task bar to open the editor. Change the values and click "Save" to apply.
+
+### Change Parent
+Drag the subject of an issue from the list on the left and drop it onto another issue name to set it as the new parent.
+
+## Technical Details
+For technical documentation, please refer to `IMPLEMENTATION_GUIDE.md`.

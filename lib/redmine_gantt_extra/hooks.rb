@@ -33,7 +33,9 @@ module RedmineGanttExtra
             error_update_failed: I18n.t('gantt_extra.error_update_failed'),
             error_permission_denied: I18n.t('gantt_extra.error_permission_denied'),
             error_validation_failed: I18n.t('gantt_extra.error_validation_failed'),
-            loading: I18n.t('gantt_extra.loading')
+            loading: I18n.t('gantt_extra.loading'),
+            label_switch_to_date_view: I18n.t('gantt_extra.label_switch_to_date_view'),
+            label_switch_to_standard_view: I18n.t('gantt_extra.label_switch_to_standard_view')
           }
         }
 

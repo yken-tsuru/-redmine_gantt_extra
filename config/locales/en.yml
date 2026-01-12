@@ -15,3 +15,5 @@ en:
     error_permission_denied: "Permission denied: You do not have permission to edit this issue."
     error_validation_failed: "Validation failed: %{errors}"
     loading: "Loading..."
+    label_switch_to_date_view: "Switch to Date View"
+    label_switch_to_standard_view: "Back to Standard View"

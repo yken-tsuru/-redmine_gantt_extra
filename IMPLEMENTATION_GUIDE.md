@@ -65,6 +65,18 @@ The `init.rb` file is the entry point. It handles:
 - **UI**: Provides fields for Start Date, Due Date, Done Ratio (0-100%), and Assignee.
 - **Action**: AJAX POST (method=put) to update the issue.
 
+#### Date Display Mode (Compact Mode)
+- **Toggle**: `_private.initModeToggle` adds a toggle button to the contextual menu (top right). Labels are fully localized via `RedmineGanttExtraData.strings`.
+- **Persistence**: State is saved in `sessionStorage`, persisting through reloads within the same session.
+- **Header Transformation (`_private.transformHeader`)**:
+    - **Hide Week Row**: Identifies and hides the row displaying week numbers.
+    - **Date Replacement**: Replaces weekday labels with numeric dates based on calendar calculations.
+    - **Layout Adjustment**: Shifts the entire Gantt area upward to reclaim space from the hidden week row.
+    - **Zoom Constraints**: Operates on weekly or finer zoom levels (Zoom >= 2) for visual consistency.
+
+#### Automatic UI Sync (MutationObserver)
+- To prevent the transformed UI (like date displays) from being overwritten when Redmine re-renders parts of the Gantt chart (e.g., after applying filters), a `MutationObserver` monitors `#gantt_area` and automatically reapplies transformations when changes are detected.
+
 #### Tree View Input
 - **Injection**: Dynamically appends a "Parent Issue ID" text input to the `#query_form` on the Gantt page.
 - **Localization**: Uses `RedmineGanttExtra.label_parent_issue_id` (injected via Hooks) to display the localized label.
@@ -76,7 +88,12 @@ The `init.rb` file is the entry point. It handles:
 - **Logic**:
     - Checks if the current controller is `GanttsController`.
     - If true, appends the plugin's CSS and JavaScript files.
-    - Injects localized strings into the `RedmineGanttExtra` JS object for frontend use.
+    - **I18n Data Injection**: All UI text (button labels, error messages, etc.) is fetched from Rails locale files and injected into the frontend as the `RedmineGanttExtraData.strings` object. This eliminates hardcoded strings in JavaScript, ensuring full internationalization and easier maintenance.
+
+### 5. Design System (`assets/stylesheets/redmine_gantt_extra.css`)
+
+- **Modern Aesthetics**: Implements color management via CSS variables, glassmorphism (background blurring), and smooth animations.
+- **Accessibility**: Enhances usability through highlighted weekend backgrounds and visual feedback (icons) for resize handles.
 
 ## Localization
 Locale files are located in `config/locales/`.

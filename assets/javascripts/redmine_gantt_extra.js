@@ -701,7 +701,8 @@ var RedmineGanttExtra = (function ($) {
         var $contextual = $('p.contextual').first();
         if ($contextual.length === 0) return;
 
-        var label = _private.config.state.isCompactMode ? "標準表示に戻す" : "日付表示に切替";
+        var labelKey = _private.config.state.isCompactMode ? "label_switch_to_standard_view" : "label_switch_to_date_view";
+        var label = _private.i18n.t(labelKey);
         var $btn = $('<a href="#" id="gantt-mode-toggle" class="icon icon-calendar"></a>')
             .text(label)
             .css({ 'margin-left': '10px', 'cursor': 'pointer' })
