@@ -1,2 +1,17 @@
 en:
   label_parent_issue_id: "Parent Issue ID"
+  gantt_extra:
+    title_edit_issue: "Edit Issue #%{id}"
+    label_start_date: "Start"
+    label_due_date: "Due"
+    label_done_ratio: "Done"
+    label_assignee: "Assignee"
+    label_none: "(None)"
+    button_save: "Save"
+    button_cancel: "Cancel"
+    confirm_change_parent: "Are you sure you want to change the parent of issue #%{dragged_id} to issue #%{target_id}?"
+    error_fetch_issue: "Failed to fetch data for issue #%{id}"
+    error_update_failed: "Failed to update issue"
+    error_permission_denied: "Permission denied: You do not have permission to edit this issue."
+    error_validation_failed: "Validation failed: %{errors}"
+    loading: "Loading..."

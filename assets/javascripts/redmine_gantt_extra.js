@@ -1,9 +1,9 @@
 /**
  * Redmine Gantt Extra Plugin
- * Adds drag and drop functionality to the Redmine Gantt chart.
+ * Improved version with better maintainability, security, and readability.
  * 
  * @author Antigravity
- * @version 0.1.0
+ * @version 0.2.1
  */
 
 var RedmineGanttExtra = (function ($) {
@@ -12,94 +12,221 @@ var RedmineGanttExtra = (function ($) {
     var _public = {};
     var _private = {};
 
-    // Configuration and State
+    // --- Configuration ---
     _private.config = {
-        ganttAreaSelector: '#gantt_area',
-        headerSelector: '.gantt_hdr',
-        tooltipSelector: '.tooltip',
-        taskBarSelectors: '.task_todo, .task_late, .task_done',
-        issueIdPattern: /issue-(\d+)/,
-        defaultPxPerDay: 16
+        selectors: {
+            ganttArea: '#gantt_area',
+            header: '.gantt_hdr',
+            tooltip: '.tooltip',
+            taskBars: '.task_todo, .task_late, .task_done',
+            issueSubjects: 'div.issue-subject',
+            queryForm: '#query_form',
+            csrfToken: 'meta[name="csrf-token"]'
+        },
+        classes: {
+            dragging: 'is-dragging',
+            subjectHover: 'subject-hover',
+            resizeTooltip: 'gantt-resize-tooltip',
+            quickEditPopup: 'gantt-quick-edit-popup',
+            formRow: 'form-row',
+            buttonGroup: 'gantt-quick-edit-buttons'
+        },
+        patterns: {
+            issueId: /issue-(\d+)/
+        },
+        zoomMap: {
+            1: 4,  // Year
+            2: 8,  // Month
+            3: 16, // Week
+            4: 24  // Day
+        },
+        state: {
+            isCompactMode: sessionStorage.getItem('gantt_extra_compact') === 'true'
+        }
     };
 
     /**
-     * Initialize the plugin
+     * Internationalization
      */
-    _public.init = function () {
-        console.log('Redmine Gantt Extra: Initializing...');
-
-        if (!_private.checkPrerequisites()) {
-            return;
-        }
-
-        _private.setupAjax();
-        _private.addParentIssueFilter();
-        _private.initSubjectDraggables(); // NEW: Parent Reassignment
-        _private.initResizables(); // NEW: Resizing
-        _private.initQuickEditor(); // NEW: Quick Edit
-        _private.initDraggables();
-
-        console.log('Redmine Gantt Extra: Initialization complete.');
-    };
-
-    /**
-     * Check if necessary DOM elements and libraries are present
-     * @return {boolean} True if prerequisites are met
-     */
-    _private.checkPrerequisites = function () {
-        var $area = $(_private.config.ganttAreaSelector);
-        var $headers = $(_private.config.headerSelector);
-
-        if ($area.length === 0 && $headers.length === 0) {
-            // Not a gantt page
-            return false;
-        }
-
-        if (typeof $.fn.draggable === 'undefined') {
-            console.error('Redmine Gantt Extra: jQuery UI Draggable functionality is missing.');
-            return false;
-        }
-
-        return true;
-    };
-
-    /**
-     * Setup global AJAX settings (CSRF token)
-     */
-    _private.setupAjax = function () {
-        $.ajaxSetup({
-            headers: {
-                'X-CSRF-Token': $('meta[name="csrf-token"]').attr('content')
+    _private.i18n = {
+        t: function (key, params) {
+            var str = (window.RedmineGanttExtraData && window.RedmineGanttExtraData.strings && window.RedmineGanttExtraData.strings[key]) || key;
+            if (params) {
+                $.each(params, function (k, v) {
+                    str = str.replace('%{' + k + '}', v);
+                });
             }
-        });
+            return str;
+        }
     };
 
+    // --- Utilities ---
+    _private.utils = {
+        /**
+         * Get Pixels per day based on current zoom
+         */
+        getPxPerDay: function () {
+            var urlParams = new URLSearchParams(window.location.search);
+            var zoom = parseInt(urlParams.get('zoom'), 10) || 3;
+            return _private.config.zoomMap[zoom] || 16;
+        },
+
+        /**
+         * Extract Issue ID from element or string
+         */
+        getIssueId: function (input) {
+            var str = (typeof input === 'string') ? input : $(input).attr('id') || $(input).attr('data-collapse-expand');
+            var match = str && str.match(_private.config.patterns.issueId);
+            return match ? match[1] : null;
+        },
+
+        /**
+         * Safe Date Parsing (avoiding timezone issues)
+         */
+        parseDate: function (dateStr) {
+            if (!dateStr) return null;
+            var parts = dateStr.split('-');
+            if (parts.length !== 3) return new Date(dateStr);
+            return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        },
+
+        /**
+         * Format Date to YYYY-MM-DD
+         */
+        formatDate: function (date) {
+            if (!date) return '';
+            var y = date.getFullYear();
+            var m = date.getMonth() + 1;
+            var d = date.getDate();
+            return y + '-' + (m < 10 ? '0' + m : m) + '-' + (d < 10 ? '0' + d : d);
+        },
+
+        /**
+         * Add days to a date string and return new string
+         */
+        addDays: function (dateStr, days) {
+            var d = this.parseDate(dateStr);
+            if (!d) return null;
+            d.setDate(d.getDate() + days);
+            return this.formatDate(d);
+        },
+
+        /**
+         * Get Root Path for API calls
+         */
+        getRootPath: function () {
+            return (typeof R !== 'undefined' && R.path) ? R.path : '/';
+        }
+    };
+
+    // --- API Communication ---
+    _private.api = {
+        /**
+         * Fetch current issue data from Redmine API
+         */
+        fetchIssue: function (issueId, callback) {
+            var url = _private.utils.getRootPath() + 'issues/' + issueId + '.json';
+            $.getJSON(url, function (data) {
+                if (data && data.issue) {
+                    callback(data.issue);
+                }
+            }).fail(function () {
+                _private.ui.showError(_private.i18n.t('error_fetch_issue', { id: issueId }));
+            });
+        },
+
+        /**
+         * Update issue via API
+         */
+        updateIssue: function (issueId, payload, silent) {
+            var url = _private.utils.getRootPath() + 'issues/' + issueId;
+            var token = $(_private.config.selectors.csrfToken).attr('content');
+
+            payload['_method'] = 'put';
+            payload['authenticity_token'] = token;
+
+            _private.ui.loading(true);
+
+            $.ajax({
+                url: url,
+                type: 'POST',
+                data: payload,
+                success: function () {
+                    if (!silent) window.location.reload();
+                    else _private.ui.loading(false);
+                },
+                error: function (xhr) {
+                    _private.ui.loading(false);
+                    _private.ui.handleAjaxError(xhr);
+                }
+            });
+        }
+    };
+
+    // --- UI Helpers ---
+    _private.ui = {
+        showError: function (message) {
+            alert(message);
+        },
+
+        loading: function (show) {
+            if (show) {
+                if ($('#gantt-loader').length === 0) {
+                    $('<div id="gantt-loader"/>').css({
+                        position: 'fixed',
+                        top: 0, left: 0, width: '100%', height: '100%',
+                        backgroundColor: 'rgba(255,255,255,0.5)',
+                        zIndex: 20000,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '20px', fontWeight: 'bold'
+                    }).text(_private.i18n.t('loading')).appendTo('body');
+                }
+            } else {
+                $('#gantt-loader').remove();
+            }
+        },
+
+        handleAjaxError: function (xhr) {
+            var msg = _private.i18n.t('error_update_failed');
+            if (xhr.status === 403) {
+                msg = _private.i18n.t('error_permission_denied');
+            } else if (xhr.responseJSON && xhr.responseJSON.errors) {
+                msg = _private.i18n.t('error_validation_failed', { errors: xhr.responseJSON.errors.join(', ') });
+            } else if (xhr.statusText) {
+                msg += ': ' + xhr.status + ' ' + xhr.statusText;
+            }
+            this.showError(msg);
+            window.location.reload();
+        },
+
+        createFormRow: function (label, $content) {
+            return $('<div/>')
+                .addClass(_private.config.classes.formRow)
+                .append($('<label/>').text(label))
+                .append($content);
+        }
+    };
+
+    // --- Modules ---
+
     /**
-     * Add filter input for Parent Issue ID
+     * Parent Issue Filter in Query Form
      */
-    _private.addParentIssueFilter = function () {
+    _private.initParentFilter = function () {
         if ($('#parent_issue_id').length > 0) return;
 
-        var $form = $('#query_form');
-        if ($form.length === 0) {
-            console.warn('Redmine Gantt Extra: #query_form not found. Filter input cannot be added.');
-            return;
-        }
+        var $form = $(_private.config.selectors.queryForm);
+        if ($form.length === 0) return;
 
-        console.log('Redmine Gantt Extra: Adding parent issue filter input.');
         var urlParams = new URLSearchParams(window.location.search);
         var val = urlParams.get('parent_issue_id') || '';
-
-        var labelText = (typeof RedmineGanttExtra.label_parent_issue_id !== 'undefined') ? RedmineGanttExtra.label_parent_issue_id : 'Parent Issue ID';
+        var labelText = _private.i18n.t('label_parent_issue_id');
 
         var $wrapper = $('<p>').css({ 'float': 'left', 'margin-right': '15px' });
         var $label = $('<label>').attr('for', 'parent_issue_id').text(labelText + ': ').css('margin-right', '5px');
         var $input = $('<input>').attr({
-            type: 'text',
-            name: 'parent_issue_id',
-            id: 'parent_issue_id',
-            value: val,
-            size: 10
+            type: 'text', name: 'parent_issue_id', id: 'parent_issue_id',
+            value: val, size: 10
         });
 
         $wrapper.append($label).append($input);
@@ -113,494 +240,102 @@ var RedmineGanttExtra = (function ($) {
     };
 
     /**
-     * Calculate pixels per day based on the Gantt chart zoom level
-     * @return {number} Pixels per day
-     */
-    _private.getPxPerDay = function () {
-        var urlParams = new URLSearchParams(window.location.search);
-        var zoom = parseInt(urlParams.get('zoom'), 10) || 3; // Default to 3
-
-        // Redmine Gantt Zoom Map
-        // 1: 4px
-        // 2: 8px
-        // 3: 16px
-        // 4: 24px
-        var zoomMap = {
-            1: 4,
-            2: 8,
-            3: 16,
-            4: 24
-        };
-
-        return zoomMap[zoom] || 16;
-    };
-
-    /**
-     * Initialize draggable functionality on issue subjects for parent reassignment
-     */
-    _private.initSubjectDraggables = function () {
-        var $subjects = $("div.issue-subject");
-
-        if (typeof $.fn.droppable === 'undefined') {
-            console.warn('Redmine Gantt Extra: jQuery UI Droppable not present.');
-            return;
-        }
-
-        console.log('Redmine Gantt Extra: Initializing Subject Draggables for ' + $subjects.length + ' elements.');
-
-        // Make subjects draggable
-        $subjects.draggable({
-            helper: 'clone',
-            opacity: 0.7,
-            cursor: 'move',
-            revert: 'invalid', // Revert if not dropped on a valid droppable
-            zIndex: 1000,
-            distance: 10,
-            start: function (event, ui) {
-                $(this).addClass('is-dragging');
-                ui.helper.css('width', $(this).width());
-                ui.helper.addClass('issue-subject'); // Ensure helper looks like original
-            },
-            stop: function (event, ui) {
-                $(this).removeClass('is-dragging');
-            }
-        });
-
-        // Make subjects droppable (to accept children)
-        $subjects.droppable({
-            accept: function (draggable) {
-                // Check if the dragged element is an issue subject
-                return draggable.hasClass('issue-subject');
-            },
-            hoverClass: 'subject-hover',
-            tolerance: 'pointer',
-            over: function (event, ui) {
-                // console.log('Over:', $(this).attr('id')); // Too verbose for production, useful for deep debug
-            },
-            drop: function (event, ui) {
-                var $dragged = ui.draggable;
-                var $target = $(this);
-
-                var draggedIdMatch = $dragged.attr('id').match(/issue-(\d+)/);
-                var targetIdMatch = $target.attr('id').match(/issue-(\d+)/);
-
-                if (!draggedIdMatch || !targetIdMatch) return;
-
-                var draggedId = draggedIdMatch[1];
-                var targetId = targetIdMatch[1];
-
-                // Prevent dropping on self
-                if (draggedId === targetId) return;
-
-                console.log("Reassigning: Issue " + draggedId + " -> New Parent " + targetId);
-
-                if (confirm('Are you sure you want to change the parent of issue #' + draggedId + ' to issue #' + targetId + '?')) {
-                    _private.updateIssueParent(draggedId, targetId);
-                }
-            }
-        });
-    };
-
-    /**
-     * AJAX call to update issue parent
-     */
-    _private.updateIssueParent = function (issueId, parentId) {
-        var rootPath = (typeof R !== 'undefined' && R.path) ? R.path : '/';
-
-        // Use standard form submission format instead of JSON API
-        var payload = {
-            'issue[parent_issue_id]': parentId
-        };
-
-        console.log('Redmine Gantt Extra: Updating parent for Issue #' + issueId, payload);
-
-        // Reuse the shared submit function
-        _private.submitIssueUpdate(issueId, payload, rootPath);
-    };
-
-    /**
-     * Initialize resizable functionality on task tooltips
-     */
-    _private.initResizables = function () {
-        var $tooltips = $(_private.config.tooltipSelector).filter(function () {
-            var data = $(this).attr('data-collapse-expand');
-            return data && data.match(_private.config.issueIdPattern);
-        });
-
-        if (typeof $.fn.resizable === 'undefined') {
-            console.warn('Redmine Gantt Extra: jQuery UI Resizable not present.');
-            return;
-        }
-
-        console.log('Redmine Gantt Extra: Found ' + $tooltips.length + ' resizable elements.');
-        var pxPerDay = _private.getPxPerDay();
-
-        $tooltips.resizable({
-            handles: 'e, w', // East (right) and West (left) handles
-            minWidth: pxPerDay, // Minimum width 1 day
-            grid: [pxPerDay, 0], // Snap to day grid
-            start: function (event, ui) {
-                var $el = $(this);
-                $el.data('start-width', ui.size.width);
-                $el.data('start-left', ui.position.left);
-
-                // Tooltip setup
-                var $tooltip = $('<div class="gantt-resize-tooltip">Loading...</div>');
-                $('body').append($tooltip);
-                $el.data('resize-tooltip', $tooltip);
-
-                var issueIdMatch = $el.attr('data-collapse-expand').match(_private.config.issueIdPattern);
-                if (issueIdMatch) {
-                    var issueId = issueIdMatch[1];
-                    _private.fetchIssueDates(issueId, function (dates) {
-                        $el.data('issue-dates', dates);
-                        // Trigger an update if still dragging
-                        if ($el.data('resize-tooltip')) {
-                            // Force update (simulate resize event logic effectively)
-                            // But we lack 'ui' here easily. 
-                            // Simplified: just set flag.
-                            $el.data('dates-loaded', true);
-                        }
-                    });
-                }
-            },
-            resize: function (event, ui) {
-                var $el = $(this);
-                var $tooltip = $el.data('resize-tooltip');
-                if (!$tooltip) return;
-
-                var deltaWidth = ui.size.width - $el.data('start-width');
-                var deltaLeft = ui.position.left - $el.data('start-left');
-                var pxPerDay = _private.getPxPerDay(); // Re-fetch to be safe
-
-                var deltaDays = 0;
-                var mode = ''; // 'start' or 'due'
-
-                if (Math.abs(deltaLeft) > 1) {
-                    deltaDays = Math.round(deltaLeft / pxPerDay);
-                    mode = 'start';
-                } else {
-                    deltaDays = Math.round(deltaWidth / pxPerDay);
-                    mode = 'due';
-                }
-
-                // Update Tooltip Position
-                $tooltip.css({
-                    top: event.pageY - 30,
-                    left: event.pageX + 15
-                });
-
-                var dates = $el.data('issue-dates');
-                if (dates) {
-                    var baseDateStr = (mode === 'start') ? dates.start_date : dates.due_date;
-                    if (baseDateStr) {
-                        // Calc new date
-                        var parts = baseDateStr.split('-');
-                        var d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
-                        d.setDate(d.getDate() + deltaDays);
-
-                        var newY = d.getFullYear();
-                        var newM = d.getMonth() + 1;
-                        var newD = d.getDate();
-                        var newDateStr = newY + '-' + (newM < 10 ? '0' + newM : newM) + '-' + (newD < 10 ? '0' + newD : newD);
-
-                        $tooltip.text((mode === 'start' ? 'Start: ' : 'Due: ') + newDateStr + ' (' + (deltaDays > 0 ? '+' : '') + deltaDays + 'd)');
-                    } else {
-                        $tooltip.text((mode === 'start' ? 'Start' : 'Due') + ': ' + (deltaDays > 0 ? '+' : '') + deltaDays + ' days');
-                    }
-                } else {
-                    $tooltip.text('Moving: ' + (deltaDays > 0 ? '+' : '') + deltaDays + ' days');
-                }
-            },
-            stop: function (event, ui) {
-                var $el = $(this);
-                var $tooltip = $el.data('resize-tooltip');
-                if ($tooltip) {
-                    $tooltip.remove();
-                    $el.removeData('resize-tooltip');
-                }
-                $el.removeData('issue-dates');
-                $el.removeData('dates-loaded');
-
-                var deltaWidth = ui.size.width - $el.data('start-width');
-                var deltaLeft = ui.position.left - $el.data('start-left');
-
-                // Determine direction and delta days
-                var deltaDays = 0;
-                var issueIdMatch = $el.attr('data-collapse-expand').match(_private.config.issueIdPattern);
-                if (!issueIdMatch) return;
-                var issueId = issueIdMatch[1];
-
-                var pxPerDay = _private.getPxPerDay();
-
-                // If left position changed, it's a start_date change (West handle)
-                if (Math.abs(deltaLeft) > 1) {
-                    deltaDays = Math.round(deltaLeft / pxPerDay);
-                    _private.updateIssueSingleDate(issueId, 'start_date', deltaDays);
-                }
-                // If only width changed but left stayed same, it's a due_date change (East handle)
-                else {
-                    deltaDays = Math.round(deltaWidth / pxPerDay);
-                    _private.updateIssueSingleDate(issueId, 'due_date', deltaDays);
-                }
-            }
-        });
-    };
-
-    /**
-     * Helper to fetch issue dates for tooltip
-     */
-    _private.fetchIssueDates = function (issueId, callback) {
-        var rootPath = (typeof R !== 'undefined' && R.path) ? R.path : '/';
-        var url = rootPath + 'issues/' + issueId + '.json';
-
-        $.getJSON(url, function (data) {
-            if (data && data.issue) {
-                callback({
-                    start_date: data.issue.start_date,
-                    due_date: data.issue.due_date
-                });
-            }
-        });
-    };
-
-    /**
-     * Update single date (start or due) due to resize
-     */
-    _private.updateIssueSingleDate = function (issueId, dateField, daysDelta) {
-        if (daysDelta === 0) return;
-
-        var rootPath = (typeof R !== 'undefined' && R.path) ? R.path : '/';
-        var url = rootPath + 'issues/' + issueId + '.json';
-
-        $.getJSON(url, function (data) {
-            if (!data || !data.issue) {
-                window.location.reload();
-                return;
-            }
-            var issue = data.issue;
-            var currentStr = issue[dateField];
-            if (!currentStr) {
-                // Creating date where none existed might be complex without reference, rely on reload
-                window.location.reload();
-                return;
-            }
-
-            // Safe Local Date Parsing to avoid timezone shifts
-            var parts = currentStr.split('-');
-            var y = parseInt(parts[0], 10);
-            var m = parseInt(parts[1], 10) - 1;
-            var d = parseInt(parts[2], 10);
-
-            var dateObj = new Date(y, m, d);
-            dateObj.setDate(dateObj.getDate() + daysDelta);
-
-            var newY = dateObj.getFullYear();
-            var newM = dateObj.getMonth() + 1;
-            var newD = dateObj.getDate();
-
-            var newStr = newY + '-' + (newM < 10 ? '0' + newM : newM) + '-' + (newD < 10 ? '0' + newD : newD);
-
-            console.log('Resizing Issue #' + issueId + ': ' + dateField + ' from ' + currentStr + ' to ' + newStr + ' (delta: ' + daysDelta + ')');
-
-            var payload = {};
-            payload['issue[' + dateField + ']'] = newStr;
-
-            _private.submitIssueUpdate(issueId, payload, rootPath);
-        });
-    };
-
-    /**
-     * Initialize Quick Editor functionality on task click
-     */
-    _private.initQuickEditor = function () {
-        // Bind to elements that represent the task bar
-        // .task_todo, .task_late, .task_done are the visible bars.
-        // .tooltip is the overlay. We bind to tooltip as it covers them.
-        $(_private.config.tooltipSelector).on('click', function (e) {
-            // Check if it's a valid issue
-            var data = $(this).attr('data-collapse-expand');
-            var match = data && data.match(_private.config.issueIdPattern);
-            if (!match) return;
-
-            e.preventDefault();
-            e.stopPropagation(); // Stop navigation
-
-            var issueId = match[1];
-            _private.openQuickEditor(issueId, e.pageX, e.pageY);
-        });
-
-        // Close popup on click outside
-        $(document).on('click', function (e) {
-            if (!$(e.target).closest('.gantt-quick-edit-popup').length) {
-                $('.gantt-quick-edit-popup').remove();
-            }
-        });
-    };
-
-    /**
-     * Open Quick Editor Popup
-     */
-    _private.openQuickEditor = function (issueId, x, y) {
-        // Remove existing
-        $('.gantt-quick-edit-popup').remove();
-
-        var rootPath = (typeof R !== 'undefined' && R.path) ? R.path : '/';
-        var url = rootPath + 'issues/' + issueId + '.json';
-
-        // Show loading or wait? Better wait for data.
-        $.getJSON(url, function (data) {
-            if (!data || !data.issue) return;
-            var issue = data.issue;
-
-            // Generate UI
-            var $popup = $('<div class="gantt-quick-edit-popup">');
-            $popup.append('<h3>Edit Issue #' + issue.id + '</h3>');
-
-            // Start Date
-            var start = issue.start_date || '';
-            $popup.append('<div class="form-row"><label>Start:</label><input type="date" name="start_date" value="' + start + '"></div>');
-
-            // Due Date
-            var due = issue.due_date || '';
-            $popup.append('<div class="form-row"><label>Due:</label><input type="date" name="due_date" value="' + due + '"></div>');
-
-            // Done Ratio
-            var $ratioSelect = $('<select name="done_ratio">');
-            for (var i = 0; i <= 100; i += 10) {
-                var selected = (issue.done_ratio === i) ? 'selected' : '';
-                $ratioSelect.append('<option value="' + i + '" ' + selected + '>' + i + ' %</option>');
-            }
-            $popup.append($('<div class="form-row"><label>Done:</label>').append($ratioSelect));
-
-            // Assignee
-            var $assigneeSelect = $('<select name="assigned_to_id">');
-            $assigneeSelect.append('<option value="">(None)</option>');
-
-            // Populate from injected data
-            var currentAssigneeId = issue.assigned_to ? issue.assigned_to.id : null;
-            if (RedmineGanttExtra.assignables && RedmineGanttExtra.assignables.length > 0) {
-                $.each(RedmineGanttExtra.assignables, function (idx, user) {
-                    var selected = (currentAssigneeId == user.id) ? 'selected' : '';
-                    $assigneeSelect.append('<option value="' + user.id + '" ' + selected + '>' + user.name + '</option>');
-                });
-            } else {
-                // Fallback: If no injected data, at least show current assignee if exists
-                if (issue.assigned_to) {
-                    $assigneeSelect.append('<option value="' + issue.assigned_to.id + '" selected>' + issue.assigned_to.name + '</option>');
-                }
-                $assigneeSelect.append('<option disabled>Loading user list failed or empty</option>');
-            }
-            $popup.append($('<div class="form-row"><label>Assignee:</label>').append($assigneeSelect));
-
-            // Buttons
-            var $btns = $('<div class="gantt-quick-edit-buttons">');
-            var $saveBtn = $('<button>Save</button>').click(function () {
-                _private.submitQuickEdit(issueId, $popup);
-            });
-            var $cancelBtn = $('<button>Cancel</button>').click(function () {
-                $popup.remove();
-            });
-
-            $btns.append($cancelBtn).append($saveBtn);
-            $popup.append($btns);
-
-            $('body').append($popup);
-            $popup.css({ top: y, left: x });
-        });
-    };
-
-    /**
-     * Submit Quick Edit Data
-     */
-    _private.submitQuickEdit = function (issueId, $popup) {
-        var start = $popup.find('input[name="start_date"]').val();
-        var due = $popup.find('input[name="due_date"]').val();
-        var ratio = $popup.find('select[name="done_ratio"]').val();
-        var assignee = $popup.find('select[name="assigned_to_id"]').val();
-
-        var payload = {
-            'issue[start_date]': start,
-            'issue[due_date]': due,
-            'issue[done_ratio]': ratio,
-            'issue[assigned_to_id]': assignee
-        };
-
-        var rootPath = (typeof R !== 'undefined' && R.path) ? R.path : '/';
-        _private.submitIssueUpdate(issueId, payload, rootPath);
-        $popup.remove();
-    };
-
-    /**
-     * Initialize draggable functionality on task tooltips
+     * Drag and Drop for Entire Task
      */
     _private.initDraggables = function () {
-        var $tooltips = $(_private.config.tooltipSelector).filter(function () {
-            var data = $(this).attr('data-collapse-expand');
-            return data && data.match(_private.config.issueIdPattern);
+        var $tooltips = $(_private.config.selectors.tooltip).filter(function () {
+            return _private.utils.getIssueId(this);
         });
 
-        console.log('Redmine Gantt Extra: Found ' + $tooltips.length + ' draggable elements.');
-
-        var pxPerDay = _private.getPxPerDay();
-        console.log('Redmine Gantt Extra: Scale is ' + pxPerDay + ' px/day.');
+        var pxPerDay = _private.utils.getPxPerDay();
 
         $tooltips.draggable({
             axis: 'x',
             cursor: 'move',
             distance: 10,
             start: function (event, ui) {
-                _private.handleDragStart(this, ui);
+                var $el = $(this);
+                var issueKey = $el.attr('data-collapse-expand');
+                var $related = $('div[data-collapse-expand="' + issueKey + '"]');
+
+                $el.data('related-elements', $related);
+                $el.data('start-left', ui.position.left);
+
+                // Create dragging tooltip
+                var $tip = $('<div/>').addClass(_private.config.classes.resizeTooltip).text(_private.i18n.t('loading'));
+                $('body').append($tip);
+                $el.data('drag-tooltip', $tip);
+
+                var issueId = _private.utils.getIssueId($el);
+                _private.api.fetchIssue(issueId, function (issue) {
+                    $el.data('issue-data', issue);
+                });
+
+                $related.each(function () {
+                    $(this).data('origin-left', parseInt($(this).css('left'), 10));
+                    $(this).css('opacity', '0.6');
+                });
             },
             drag: function (event, ui) {
-                _private.handleDrag(this, ui);
+                var $el = $(this);
+                var delta = ui.position.left - $el.data('start-left');
+                var $related = $el.data('related-elements');
+
+                $related.not(this).each(function () {
+                    var origin = $(this).data('origin-left');
+                    $(this).css('left', (origin + delta) + 'px');
+                });
+
+                // Update tooltip
+                var $tip = $el.data('drag-tooltip');
+                if ($tip) {
+                    $tip.css({ top: event.pageY - 40, left: event.pageX + 15 });
+                    var deltaDays = Math.round(delta / pxPerDay);
+                    var issue = $el.data('issue-data');
+                    if (issue) {
+                        var start = issue.start_date ? _private.utils.addDays(issue.start_date, deltaDays) : '?';
+                        var due = issue.due_date ? _private.utils.addDays(issue.due_date, deltaDays) : '?';
+                        $tip.html(
+                            _private.i18n.t('label_start_date') + ': ' + start + '<br/>' +
+                            _private.i18n.t('label_due_date') + ': ' + due +
+                            ' (' + (deltaDays > 0 ? '+' : '') + deltaDays + 'd)'
+                        );
+                    }
+                }
             },
             stop: function (event, ui) {
-                _private.handleDragStop(this, ui, pxPerDay);
+                var $el = $(this);
+                var $related = $el.data('related-elements');
+                var $tip = $el.data('drag-tooltip');
+                if ($tip) $tip.remove();
+
+                $related.css('opacity', '');
+
+                var deltaPx = ui.position.left - $el.data('start-left');
+                var deltaDays = Math.round(deltaPx / pxPerDay);
+
+                if (deltaDays === 0) {
+                    _private.revertPosition($related);
+                    return;
+                }
+
+                var issueId = _private.utils.getIssueId($el);
+                if (issueId) {
+                    _private.api.fetchIssue(issueId, function (issue) {
+                        var payload = {};
+                        if (issue.start_date) {
+                            payload['issue[start_date]'] = _private.utils.addDays(issue.start_date, deltaDays);
+                        }
+                        if (issue.due_date) {
+                            payload['issue[due_date]'] = _private.utils.addDays(issue.due_date, deltaDays);
+                        }
+                        _private.api.updateIssue(issueId, payload);
+                    });
+                } else {
+                    _private.revertPosition($related);
+                }
             }
         });
-    };
-
-    _private.handleDragStart = function (el, ui) {
-        var issueKey = $(el).attr('data-collapse-expand');
-        var $related = $('div[data-collapse-expand="' + issueKey + '"]');
-
-        $(el).data('related-elements', $related);
-        $(el).data('start-left', ui.position.left);
-
-        $related.each(function () {
-            $(this).data('origin-left', parseInt($(this).css('left'), 10));
-            $(this).css('opacity', '0.6');
-        });
-    };
-
-    _private.handleDrag = function (el, ui) {
-        var delta = ui.position.left - $(el).data('start-left');
-        var $related = $(el).data('related-elements');
-
-        $related.not(el).each(function () {
-            var origin = $(this).data('origin-left');
-            $(this).css('left', (origin + delta) + 'px');
-        });
-    };
-
-    _private.handleDragStop = function (el, ui, pxPerDay) {
-        var $related = $(el).data('related-elements');
-        $related.css('opacity', '');
-
-        var deltaPx = ui.position.left - $(el).data('start-left');
-        var deltaDays = Math.round(deltaPx / pxPerDay);
-
-        var issueKey = $(el).attr('data-collapse-expand');
-        var matches = issueKey.match(_private.config.issueIdPattern); // issue-(\d+)
-
-        if (matches && matches[1]) {
-            // Logic to confirm action could go here
-            _private.updateIssueDate(matches[1], deltaDays);
-        } else {
-            // Revert if ID not found
-            _private.revertPosition($related);
-        }
     };
 
     _private.revertPosition = function ($elements) {
@@ -610,91 +345,382 @@ var RedmineGanttExtra = (function ($) {
     };
 
     /**
-     * Fetch issue data and update start/due dates
-     * @param {string} issueId 
-     * @param {number} daysDelta 
+     * Resizing Tasks
      */
-    _private.updateIssueDate = function (issueId, daysDelta) {
-        if (daysDelta === 0) return;
+    _private.initResizables = function () {
+        var $tooltips = $(_private.config.selectors.tooltip).filter(function () {
+            return _private.utils.getIssueId(this);
+        });
 
-        var rootPath = (typeof R !== 'undefined' && R.path) ? R.path : '/';
-        var url = rootPath + 'issues/' + issueId + '.json';
+        if (typeof $.fn.resizable === 'undefined') return;
 
-        $.getJSON(url, function (data) {
-            if (!data || !data.issue) {
-                alert('Error: Could not fetch issue data.');
-                window.location.reload();
-                return;
+        var pxPerDay = _private.utils.getPxPerDay();
+
+        $tooltips.resizable({
+            handles: 'e, w',
+            minWidth: pxPerDay,
+            grid: [pxPerDay, 0],
+            start: function (event, ui) {
+                var $el = $(this);
+                $el.data('start-width', ui.size.width);
+                $el.data('start-left', ui.position.left);
+
+                var $tip = $('<div/>').addClass(_private.config.classes.resizeTooltip).text(_private.i18n.t('loading'));
+                $('body').append($tip);
+                $el.data('resize-tooltip', $tip);
+
+                var issueId = _private.utils.getIssueId($el);
+                _private.api.fetchIssue(issueId, function (issue) {
+                    $el.data('issue-data', issue);
+                });
+            },
+            resize: function (event, ui) {
+                var $el = $(this);
+                var $tip = $el.data('resize-tooltip');
+                if (!$tip) return;
+
+                var deltaWidth = ui.size.width - $el.data('start-width');
+                var deltaLeft = ui.position.left - $el.data('start-left');
+                var pxPerDay = _private.utils.getPxPerDay();
+
+                var deltaDays = (Math.abs(deltaLeft) > 1) ? Math.round(deltaLeft / pxPerDay) : Math.round(deltaWidth / pxPerDay);
+                var mode = (Math.abs(deltaLeft) > 1) ? 'start' : 'due';
+
+                $tip.css({ top: event.pageY - 30, left: event.pageX + 15 });
+
+                var issue = $el.data('issue-data');
+                var label = _private.i18n.t(mode === 'start' ? 'label_start_date' : 'label_due_date');
+
+                if (issue) {
+                    var baseDate = (mode === 'start') ? issue.start_date : issue.due_date;
+                    if (baseDate) {
+                        var newDate = _private.utils.addDays(baseDate, deltaDays);
+                        $tip.text(label + ': ' + newDate + ' (' + (deltaDays > 0 ? '+' : '') + deltaDays + 'd)');
+                    } else {
+                        $tip.text(label + ': ' + (deltaDays > 0 ? '+' : '') + deltaDays + 'd');
+                    }
+                }
+            },
+            stop: function (event, ui) {
+                var $el = $(this);
+                var $tip = $el.data('resize-tooltip');
+                if ($tip) $tip.remove();
+
+                var deltaWidth = ui.size.width - $el.data('start-width');
+                var deltaLeft = ui.position.left - $el.data('start-left');
+                var pxPerDay = _private.utils.getPxPerDay();
+
+                var issueId = _private.utils.getIssueId($el);
+                var deltaDays = (Math.abs(deltaLeft) > 1) ? Math.round(deltaLeft / pxPerDay) : Math.round(deltaWidth / pxPerDay);
+                var mode = (Math.abs(deltaLeft) > 1) ? 'start_date' : 'due_date';
+
+                if (deltaDays === 0) return;
+
+                _private.api.fetchIssue(issueId, function (issue) {
+                    if (!issue[mode]) {
+                        window.location.reload();
+                        return;
+                    }
+                    var payload = {};
+                    payload['issue[' + mode + ']'] = _private.utils.addDays(issue[mode], deltaDays);
+                    _private.api.updateIssue(issueId, payload);
+                });
             }
-
-            var issue = data.issue;
-            var start = issue.start_date ? new Date(issue.start_date) : null;
-            var due = issue.due_date ? new Date(issue.due_date) : null;
-            var payload = {};
-
-            if (start) {
-                start.setDate(start.getDate() + daysDelta);
-                payload['issue[start_date]'] = start.toISOString().slice(0, 10);
-            }
-            if (due) {
-                due.setDate(due.getDate() + daysDelta);
-                payload['issue[due_date]'] = due.toISOString().slice(0, 10);
-            }
-
-            _private.submitIssueUpdate(issueId, payload, rootPath);
-        }).fail(function () {
-            alert('Error: Network error while fetching issue data.');
-            window.location.reload();
         });
     };
 
     /**
-     * Submit the update via POST (method=put) to handle session correctly
-     * @param {string} issueId 
-     * @param {object} dataPayload 
-     * @param {string} rootPath 
+     * Parent Reassignment by dragging Subjects
      */
-    _private.submitIssueUpdate = function (issueId, dataPayload, rootPath) {
-        var updateUrl = rootPath + 'issues/' + issueId;
+    _private.initHierarchyDraggables = function () {
+        var $subjects = $(_private.config.selectors.issueSubjects);
+        if (typeof $.fn.droppable === 'undefined') return;
 
-        // Add Rails method override and CSRF token
-        dataPayload['_method'] = 'put';
-        dataPayload['authenticity_token'] = $('meta[name="csrf-token"]').attr('content');
-
-        console.log('Redmine Gantt Extra: Submitting update for Issue #' + issueId, dataPayload);
-
-        $.ajax({
-            url: updateUrl,
-            type: 'POST',
-            data: dataPayload,
-            success: function () {
-                console.log('Redmine Gantt Extra: Update successful. Reloading.');
-                window.location.reload();
+        $subjects.draggable({
+            helper: 'clone', opacity: 0.7, cursor: 'move', revert: 'invalid', zIndex: 1000, distance: 10,
+            start: function (event, ui) {
+                $(this).addClass(_private.config.classes.dragging);
+                ui.helper.css('width', $(this).width()).addClass('issue-subject');
             },
-            error: function (xhr) {
-                _private.handleUpdateError(xhr);
+            stop: function (event, ui) {
+                $(this).removeClass(_private.config.classes.dragging);
+            }
+        });
+
+        $subjects.droppable({
+            accept: '.' + _private.config.selectors.issueSubjects.split('.')[1],
+            hoverClass: _private.config.classes.subjectHover,
+            tolerance: 'pointer',
+            drop: function (event, ui) {
+                var draggedId = _private.utils.getIssueId(ui.draggable);
+                var targetId = _private.utils.getIssueId(this);
+
+                if (!draggedId || !targetId || draggedId === targetId) return;
+
+                if (confirm(_private.i18n.t('confirm_change_parent', { dragged_id: draggedId, target_id: targetId }))) {
+                    var payload = { 'issue[parent_issue_id]': targetId };
+                    _private.api.updateIssue(draggedId, payload);
+                }
             }
         });
     };
 
-    _private.handleUpdateError = function (xhr) {
-        var msg = 'Failed to update issue';
-        if (xhr.status === 403) {
-            msg = 'Permission denied: You do not have permission to edit this issue.';
-        } else if (xhr.responseJSON && xhr.responseJSON.errors) {
-            msg = 'Validation failed: ' + xhr.responseJSON.errors.join(', ');
-        } else {
-            msg += ': ' + xhr.status + ' ' + xhr.statusText;
+    /**
+     * Quick Editor Popup
+     */
+    _private.initQuickEditor = function () {
+        $(_private.config.selectors.tooltip).on('click', function (e) {
+            var issueId = _private.utils.getIssueId(this);
+            if (!issueId) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            _private.openQuickEditor(issueId, e.pageX, e.pageY);
+        });
+
+        $(document).on('click', function (e) {
+            if (!$(e.target).closest('.' + _private.config.classes.quickEditPopup).length) {
+                $('.' + _private.config.classes.quickEditPopup).remove();
+            }
+        });
+    };
+
+    _private.openQuickEditor = function (issueId, x, y) {
+        $('.' + _private.config.classes.quickEditPopup).remove();
+
+        _private.api.fetchIssue(issueId, function (issue) {
+            var $popup = $('<div/>').addClass(_private.config.classes.quickEditPopup);
+            $popup.append($('<h3/>').text(_private.i18n.t('title_edit_issue', { id: issue.id })));
+
+            // Date Fields
+            $popup.append(_private.ui.createFormRow(_private.i18n.t('label_start_date') + ':',
+                $('<input type="date" name="start_date"/>').val(issue.start_date || '')));
+
+            $popup.append(_private.ui.createFormRow(_private.i18n.t('label_due_date') + ':',
+                $('<input type="date" name="due_date"/>').val(issue.due_date || '')));
+
+            // Done Ratio
+            var $ratioSelect = $('<select name="done_ratio"/>');
+            for (var i = 0; i <= 100; i += 10) {
+                $('<option/>').val(i).text(i + ' %').prop('selected', issue.done_ratio === i).appendTo($ratioSelect);
+            }
+            $popup.append(_private.ui.createFormRow(_private.i18n.t('label_done_ratio') + ':', $ratioSelect));
+
+            // Assignee
+            var $assigneeSelect = $('<select name="assigned_to_id"/>');
+            $assigneeSelect.append($('<option/>').val('').text(_private.i18n.t('label_none')));
+
+            var currentId = issue.assigned_to ? issue.assigned_to.id : null;
+            var assignables = (window.RedmineGanttExtraData && window.RedmineGanttExtraData.assignables) || [];
+
+            if (assignables.length > 0) {
+                $.each(assignables, function (idx, user) {
+                    $('<option/>').val(user.id).text(user.name).prop('selected', currentId == user.id).appendTo($assigneeSelect);
+                });
+            } else if (issue.assigned_to) {
+                $('<option/>').val(issue.assigned_to.id).text(issue.assigned_to.name).prop('selected', true).appendTo($assigneeSelect);
+            }
+            $popup.append(_private.ui.createFormRow(_private.i18n.t('label_assignee') + ':', $assigneeSelect));
+
+            // Buttons
+            var $btns = $('<div/>').addClass(_private.config.classes.buttonGroup);
+            $('<button/>').text(_private.i18n.t('button_cancel')).click(function () { $popup.remove(); }).appendTo($btns);
+            $('<button/>').text(_private.i18n.t('button_save')).click(function () {
+                var payload = {
+                    'issue[start_date]': $popup.find('input[name="start_date"]').val(),
+                    'issue[due_date]': $popup.find('input[name="due_date"]').val(),
+                    'issue[done_ratio]': $popup.find('select[name="done_ratio"]').val(),
+                    'issue[assigned_to_id]': $popup.find('select[name="assigned_to_id"]').val()
+                };
+                _private.api.updateIssue(issueId, payload);
+                $popup.remove();
+            }).appendTo($btns);
+            $popup.append($btns);
+
+            $('body').append($popup);
+
+            // Positioning
+            var popupWidth = 260;
+            var left = (x + popupWidth > $(window).width()) ? $(window).width() - popupWidth - 20 : x;
+            $popup.css({ top: y, left: left });
+        });
+    };
+
+    /**
+     * Transform Gantt Header: Hide Weeks and change Weekdays to Dates
+     * MutationObserverを利用して、Redmine本体の再描画後も表示を維持します。
+     */
+    /**
+     * Transform Gantt Header: Hide Weeks and change Weekdays to Dates
+     * MutationObserverを利用して、Redmine本体の再描画後も表示を維持します。
+     */
+    _private.transformHeader = function () {
+        var $area = $(_private.config.selectors.ganttArea);
+        if ($area.length === 0 || $area.data('processing')) return;
+
+        var urlParams = new URLSearchParams(window.location.search);
+        var zoom = parseInt(urlParams.get('zoom'), 10) || 3;
+
+        // ズームレベル1（年単位）は対象外
+        if (zoom === 1) return;
+
+        // 重複実行防止フラグ
+        $area.data('processing', true);
+        console.log("RedmineGanttExtra: Applying transformation (Zoom: " + zoom + ")...");
+
+        // 1. 週番号行を特定して非表示にする
+        // Redmineの標準では週番号は <small> タグで囲まれていることが多い
+        var $weekRows = $area.find('.gantt_hdr').filter(function () {
+            var top = parseInt(this.style.top, 10);
+            return (top === 19 || top === 18) && $(this).find('small').length > 0;
+        });
+        $weekRows.hide();
+
+        // 2. 曜日行を特定して加工（ズーム3以上の場合）
+        var $dayDivs = $area.find('.gantt_hdr').filter(function () {
+            var top = parseInt(this.style.top, 10);
+            // 曜日行は通常 top 30付近にある
+            return top >= 30 && $(this).find('small, a').length === 0;
+        });
+
+        if ($dayDivs.length > 0) {
+            $dayDivs.each(function () {
+                var top = parseInt(this.style.top, 10);
+                $(this).css({
+                    'top': (top - 18) + 'px',
+                    'z-index': '20',
+                    'color': '#333'
+                }).addClass('gantt-extra-date-cell');
+
+                if ($(this).width() < 18) $(this).addClass('gantt-tight-col');
+            });
         }
-        alert(msg);
-        window.location.reload();
+
+        // 3. 全体の表示位置を上に詰める
+        // ズーム2など曜日行がない場合でも、週番号行を消した分の隙間(18px)を埋める
+        var shiftY = 18;
+
+        $('#today_line, #gantt_draw_area, #gantt_area .gantt_selected_column_content').each(function () {
+            var top = parseInt($(this).css('top'), 10);
+            if (top > 20) $(this).css('top', (top - shiftY) + 'px');
+        });
+
+        $('.gantt_subjects div, .gantt_selected_column_content div').filter(function () {
+            return this.style.position === 'absolute';
+        }).each(function () {
+            var top = parseInt(this.style.top, 10);
+            if (top > 20) $(this).css('top', (top - shiftY) + 'px');
+        });
+
+        // 4. ヘッダー背景画像/枠線の高さを調整
+        $('.gantt_hdr').each(function () {
+            var h = parseInt(this.style.height, 10);
+            // 本来3段(Month/Week/Day)あるものを2段にする想定
+            if (h >= 54) $(this).css('height', (h - 18) + 'px');
+            else if (h === 36) $(this).addClass('gantt-extra-header-shrunk');
+        });
+
+        // 5. 曜日を日付に置換（ズーム3以上の場合のみ）
+        if (zoom >= 3 && $dayDivs.length > 0) {
+            var year = parseInt(urlParams.get('year'), 10);
+            var month = parseInt(urlParams.get('month'), 10);
+
+            if (!year || !month) {
+                var $monthLink = $area.find('.gantt_hdr[style*="top: 0px"] a').first();
+                if ($monthLink.length > 0) {
+                    var text = $monthLink.text().trim();
+                    var parts = text.split('-');
+                    if (parts.length >= 2) {
+                        year = parseInt(parts[0], 10);
+                        month = parseInt(parts[1], 10);
+                    }
+                }
+            }
+
+            if (year && month) {
+                var currentDate = new Date(year, month - 1, 1);
+                $dayDivs.each(function () {
+                    var currentText = $(this).text().trim();
+                    if (currentText.length < 4) {
+                        $(this).text(currentText === "" ? "" : currentDate.getDate());
+                        if ($(this).width() > 0 && currentText !== "") {
+                            currentDate.setDate(currentDate.getDate() + 1);
+                        }
+                    }
+                });
+            }
+        }
+
+        // 処理完了後にフラグを解除
+        setTimeout(function () { $area.data('processing', false); }, 150);
+    };
+
+    /**
+     * Initialization Core
+     */
+    _public.init = function () {
+        var $area = $(_private.config.selectors.ganttArea);
+        if ($area.length === 0) return;
+
+        if (typeof $.fn.draggable === 'undefined') return;
+
+        $.ajaxSetup({
+            headers: { 'X-CSRF-Token': $(_private.config.selectors.csrfToken).attr('content') }
+        });
+
+        _private.initParentFilter();
+        _private.initHierarchyDraggables();
+        _private.initResizables();
+        _private.initQuickEditor();
+        _private.initDraggables();
+
+        // モード切替の初期化
+        _private.initModeToggle();
+
+        if (_private.config.state.isCompactMode) {
+            setTimeout(_private.transformHeader, 100);
+
+            if (window.MutationObserver) {
+                var observer = new MutationObserver(function () {
+                    if (_private.config.state.isCompactMode) _private.transformHeader();
+                });
+                observer.observe($area[0], { childList: true, subtree: false });
+                var $subjects = $('.gantt_subjects');
+                if ($subjects.length > 0) {
+                    observer.observe($subjects[0], { childList: true });
+                }
+            }
+        }
+    };
+
+    /**
+     * 表示モード切替ボタンの設置
+     */
+    _private.initModeToggle = function () {
+        var $contextual = $('p.contextual').first();
+        if ($contextual.length === 0) return;
+
+        var label = _private.config.state.isCompactMode ? "標準表示に戻す" : "日付表示に切替";
+        var $btn = $('<a href="#" id="gantt-mode-toggle" class="icon icon-calendar"></a>')
+            .text(label)
+            .css({ 'margin-left': '10px', 'cursor': 'pointer' })
+            .toggleClass('active', _private.config.state.isCompactMode);
+
+        $btn.on('click', function (e) {
+            e.preventDefault();
+            _private.config.state.isCompactMode = !_private.config.state.isCompactMode;
+            sessionStorage.setItem('gantt_extra_compact', _private.config.state.isCompactMode);
+            window.location.reload();
+        });
+
+        $contextual.append($btn);
     };
 
     return _public;
 
 })(jQuery);
 
-// Initialize when DOM is ready
 $(function () {
     RedmineGanttExtra.init();
 });

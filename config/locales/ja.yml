@@ -1,2 +1,17 @@
 ja:
   label_parent_issue_id: "親チケットID"
+  gantt_extra:
+    title_edit_issue: "チケット #%{id} を編集"
+    label_start_date: "開始"
+    label_due_date: "期日"
+    label_done_ratio: "進捗率"
+    label_assignee: "担当者"
+    label_none: "(なし)"
+    button_save: "保存"
+    button_cancel: "キャンセル"
+    confirm_change_parent: "チケット #%{dragged_id} の親をチケット #%{target_id} に変更してもよろしいですか？"
+    error_fetch_issue: "チケット #%{id} のデータの取得に失敗しました"
+    error_update_failed: "チケットの更新に失敗しました"
+    error_permission_denied: "アクセス拒否: このチケットを編集する権限がありません。"
+    error_validation_failed: "バリデーションエラー: %{errors}"
+    loading: "読み込み中..."

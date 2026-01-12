@@ -1,161 +1,303 @@
-/* Redmine Gantt Extra CSS */
-.gantt_hdr {
-    /* Header styling improvements could go here */
-    border-color: #ddd;
+/* Redmine Gantt Extra CSS - Refactored v0.2.0 */
+
+:root {
+    --gantt-primary-color: #1890ff;
+    --gantt-bg-glass: rgba(255, 255, 255, 0.95);
+    --gantt-shadow-premium: 0 8px 32px rgba(0, 0, 0, 0.12);
+    --gantt-border-radius: 6px;
+    --gantt-transition: all 0.2s ease;
 }
 
-/* Example: Hover effect for tasks to indicate interactivity */
-.gantt_task_strip {
-    cursor: pointer;
-}
-
-/* Task bar enhancements */
+/* --- Task Bars --- */
 .task_todo,
 .task_late,
 .task_done {
-    border-radius: 4px;
-    box-shadow: 1px 1px 3px rgba(0, 0, 0, 0.2);
-    transition: opacity 0.2s;
+    border-radius: 3px;
+    box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
+    transition: var(--gantt-transition);
 }
 
 .task_todo:hover,
 .task_late:hover,
 .task_done:hover {
-    opacity: 0.8;
+    filter: brightness(1.1);
     cursor: move;
-    /* Indicate draggable */
 }
 
-/* Parent/Group lines - typically handled by .task_group or similar if present, 
-   but specific selectors might depend on Redmine version. 
-   We'll add a generic improved look for markers. */
-
-/* Drag and Drop Parent Reassignment */
+/* --- Hierarchy / Subject Dragging --- */
 .issue-subject {
     cursor: grab;
-    /* Indicate draggable */
     user-select: none;
+    padding: 2px 4px;
+    border-radius: 3px;
+    border: 1px solid transparent;
+}
+
+.issue-subject:hover {
+    background-color: rgba(0, 0, 0, 0.03);
 }
 
 .issue-subject.is-dragging {
     cursor: grabbing;
-    background-color: #f0f0f0;
-    border: 1px dashed #ccc;
-    box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.2);
-    /* Ensure the helper doesn't block mouse events from reaching the droppable */
+    background-color: var(--gantt-bg-glass);
+    border: 1px dashed #999;
+    box-shadow: var(--gantt-shadow-premium);
+    opacity: 0.8;
     pointer-events: none;
 }
 
 .issue-subject.subject-hover {
     background-color: #e6f7ff !important;
-    border: 2px solid #1890ff !important;
+    border: 1px solid var(--gantt-primary-color) !important;
     font-weight: bold;
+    color: var(--gantt-primary-color);
 }
 
-/* Resizing handles */
-/* Visual Grip for Resize Handles */
+/* --- Resize Handles --- */
 .ui-resizable-e,
 .ui-resizable-w {
-    /* Transparent by default, show on hover */
     background-color: transparent;
-    transition: background-color 0.2s;
-    width: 6px !important;
-    /* Slightly larger hit area */
-}
-
-/* Add a visual indicator (grip) when hovering the task or the handle */
-.issue-subject:hover .ui-resizable-e,
-.ui-resizable-e:hover {
-    background: linear-gradient(to right, transparent 0%, rgba(0, 0, 0, 0.1) 50%, transparent 100%);
-    border-right: 2px solid rgba(0, 0, 0, 0.2);
-}
-
-.issue-subject:hover .ui-resizable-w,
-.ui-resizable-w:hover {
-    background: linear-gradient(to right, transparent 0%, rgba(0, 0, 0, 0.1) 50%, transparent 100%);
-    border-left: 2px solid rgba(0, 0, 0, 0.2);
-}
-
-/* Adjust Cursor if standard resize is too aggressive, trying col-resize or pointer? 
-   Standard 'e-resize' is robust, but let's stick to it unless user insists on custom image.
-   The visual grip usually helps UX more than cursor change. 
-*/
-.ui-resizable-e {
-    cursor: e-resize;
-    right: 0;
-    width: 5px;
-    height: 100%;
-    position: absolute;
-    top: 0;
+    width: 12px !important;
     z-index: 100;
+    transition: var(--gantt-transition);
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-/* Tooltip for resizing feedback */
+.ui-resizable-e::after,
+.ui-resizable-w::after {
+    content: "";
+    display: block;
+    width: 10px;
+    height: 24px;
+    background-color: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 8l-4 4 4 4M14 8l4 4-4 4'/%3E%3C/svg%3E");
+    background-size: 14px;
+    background-repeat: no-repeat;
+    background-position: center;
+    opacity: 0;
+    transform: scale(0.8);
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* タスクバー全体をホーバーした時に、ハンドルを薄く表示 */
+[class^="task_"]:hover .ui-resizable-e::after,
+[class^="task_"]:hover .ui-resizable-w::after,
+.issue-subject:hover~.task_todo .ui-resizable-e::after,
+/* サジェスト: 被っている可能性のあるセレクタも一応考慮 */
+.ui-resizable-e:hover::after,
+.ui-resizable-w:hover::after {
+    opacity: 0.7;
+    transform: scale(1);
+}
+
+/* ハンドル自体をホーバーした時は、強調表示 */
+.ui-resizable-e:hover::after,
+.ui-resizable-w:hover::after {
+    opacity: 1;
+    height: 28px;
+    width: 12px;
+    border-color: var(--gantt-primary-color);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231890ff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 7l-5 5 5 5M15 7l5 5-5 5'/%3E%3C/svg%3E");
+    box-shadow: 0 4px 8px rgba(24, 144, 255, 0.2);
+}
+
+/* ホーバー時の背景と幅の調整 */
+.ui-resizable-e:hover,
+.ui-resizable-w:hover {
+    background-color: rgba(24, 144, 255, 0.15);
+    width: 18px !important;
+}
+
+.ui-resizable-e:hover {
+    cursor: e-resize;
+}
+
+.ui-resizable-w:hover {
+    cursor: w-resize;
+}
+
+/* --- Tooltips --- */
 .gantt-resize-tooltip {
     position: absolute;
-    background-color: rgba(0, 0, 0, 0.8);
+    background-color: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(4px);
     color: #fff;
-    padding: 4px 8px;
+    padding: 4px 10px;
     border-radius: 4px;
     font-size: 11px;
     z-index: 10000;
     pointer-events: none;
     white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
-/* Quick Edit Popup */
+/* --- Header Refinement --- */
+/* We target only the transformed date cells to avoid breaking Month headers */
+.gantt-extra-date-cell {
+    text-align: center !important;
+    font-weight: 600 !important;
+    font-size: 10px !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+    padding: 0 !important;
+    padding-top: 2px !important;
+    /* Keep text at the top of the cell */
+    white-space: nowrap !important;
+    display: flex !important;
+    align-items: flex-start !important;
+    /* Fixed: Don't center vertically in the tall grid-line div */
+    justify-content: center;
+    line-height: 12px !important;
+    z-index: 20 !important;
+    /* Ensure on top of everything */
+    color: #333 !important;
+    opacity: 1 !important;
+    overflow: visible !important;
+}
+
+/* For very narrow columns (Zoom 2) */
+.gantt-extra-date-cell.gantt-tight-col {
+    font-size: 8.5px !important;
+    letter-spacing: -0.8px;
+}
+
+/* Weekend/Non-working day styling in header */
+.gantt_hdr.nwday.gantt-extra-date-cell {
+    background-color: rgba(231, 76, 60, 0.1) !important;
+    /* Light red back */
+    color: #e74c3c !important;
+}
+
+/* Adjust the hidden week row area in subject/column headers */
+.gantt-extra-header-shrunk {
+    height: 18px !important;
+}
+
+.gantt-extra-header-shrunk-2 {
+    height: 36px !important;
+}
+
+/* クイック編集ポップアップの微調整 */
 .gantt-quick-edit-popup {
     position: absolute;
-    background-color: #fff;
-    border: 1px solid #ccc;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
-    border-radius: 4px;
-    padding: 10px;
+    background-color: var(--gantt-bg-glass);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    box-shadow: var(--gantt-shadow-premium);
+    border-radius: var(--gantt-border-radius);
+    padding: 15px;
     z-index: 9999;
-    font-size: 12px;
-    min-width: 250px;
+    font-size: 13px;
+    min-width: 260px;
+    animation: ganttFadeIn 0.2s ease-out;
+}
+
+@keyframes ganttFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .gantt-quick-edit-popup h3 {
-    margin: 0 0 8px 0;
-    font-size: 13px;
-    border-bottom: 1px solid #eee;
-    padding-bottom: 4px;
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #333;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    padding-bottom: 8px;
 }
 
 .gantt-quick-edit-popup .form-row {
-    margin-bottom: 8px;
-    clear: both;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
 }
 
 .gantt-quick-edit-popup label {
-    display: inline-block;
     width: 80px;
-    font-weight: bold;
+    font-weight: 500;
+    color: #666;
+    margin-bottom: 0;
 }
 
 .gantt-quick-edit-popup input,
 .gantt-quick-edit-popup select {
-    width: 140px;
-    box-sizing: border-box;
+    flex: 1;
+    padding: 4px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 12px;
+    outline: none;
+}
+
+.gantt-quick-edit-popup input:focus,
+.gantt-quick-edit-popup select:focus {
+    border-color: var(--gantt-primary-color);
+    box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
 }
 
 .gantt-quick-edit-buttons {
-    text-align: right;
-    margin-top: 10px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 15px;
 }
 
 .gantt-quick-edit-buttons button {
+    padding: 5px 12px;
+    border-radius: 4px;
+    font-size: 13px;
     cursor: pointer;
-    margin-left: 5px;
+    border: 1px solid #ddd;
+    background: #fff;
+    transition: var(--gantt-transition);
 }
 
-.ui-resizable-w {
-    cursor: w-resize;
-    left: 0;
-    width: 5px;
-    height: 100%;
-    position: absolute;
-    top: 0;
-    z-index: 100;
+.gantt-quick-edit-buttons button:hover {
+    background: #f5f5f5;
+}
+
+.gantt-quick-edit-buttons button:last-child {
+    background: var(--gantt-primary-color);
+    color: #fff;
+    border-color: var(--gantt-primary-color);
+}
+
+.gantt-quick-edit-buttons button:last-child:hover {
+    background: #40a9ff;
+}
+
+/* --- Loader --- */
+#gantt-loader {
+    animation: ganttFadeIn 0.3s ease-out;
+    color: var(--gantt-primary-color);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(2px);
+}
+
+#gantt-loader::before {
+    content: "";
+    width: 24px;
+    height: 24px;
+    margin-right: 12px;
+    border: 3px solid rgba(24, 144, 255, 0.2);
+    border-top-color: var(--gantt-primary-color);
+    border-radius: 50%;
+    animation: ganttSpin 0.8s linear infinite;
+}
+
+@keyframes ganttSpin {
+    to {
+        transform: rotate(360deg);
+    }
 }

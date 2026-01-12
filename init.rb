@@ -14,7 +14,9 @@ apply_patch = -> {
 
   unless target.ancestors.include?(patch)
     target.prepend(patch)
-    Rails.logger.info "RedmineGanttExtra: Patch successfully applied to Redmine::Helpers::Gantt"
+    Rails.logger.info "### RedmineGanttExtra: Patch successfully PREPENDED to Redmine::Helpers::Gantt ###"
+  else
+    Rails.logger.info "### RedmineGanttExtra: Patch ALREADY PRESENT in Redmine::Helpers::Gantt ###"
   end
 }
 
